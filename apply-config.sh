@@ -6,6 +6,7 @@ source /etc/bigbluebutton/bbb-conf/apply-lib.sh
 # BIN
 CAT=/bin/cat
 ECHO=/bin/echo
+MV=/bin/mv
 LN=/bin/ln
 RM=/bin/rm
 SED=/bin/sed
@@ -14,6 +15,7 @@ SED=/bin/sed
 
 ## PATHS
 CRONDAILY=/etc/cron.daily/bigbluebutton
+CRONHOURLY=/etc/cron.hourly/bigbluebutton
 BBBWEBPROP=/usr/share/bbb-web/WEB-INF/classes/bigbluebutton.properties
 FREESWITCHAPPCONF=/etc/bbb-fsesl-akka/application.conf
 FREESWITCHLOGCONF=/etc/bbb-fsesl-akka/logback.xml
@@ -37,18 +39,43 @@ KEEPCACHES=1
 KEEPLOGS=1
 KEEPWBMATERIAL=1
 
-$ECHO "Setting retention period for raw data of processed recordings to $KEEPPROCESSEDRAW days."
-$SED -e "s/^\(published_days=\).*$/\1$KEEPPROCESSEDRAW/" -i $CRONDAILY
+# FUNCTIONS
+
+retentioncalc ()  {
+	DAYS=$1
+	echo "$(expr $DAYS \* 24)-$(expr $DAYS \* 24 + 1) hours"
+}
+
+# MAIN
+
+if [ -f $CRONDAILY ]
+   then
+      echo "Moving cron from daily to hourly for shorter retention periods."
+      $MV $CRONDAILY $CRONHOURLY
+      CRONDAILY=$CRONHOURLY
+   else
+      if [ -f $CRONHOURLY ]
+         then
+            echo "Cron already moved to hourly."
+            CRONDAILY=$CRONHOURLY
+         else
+	    echo "Can't find cron, something's strange here. Exiting."
+            exit 1
+      fi
+fi
+      
+$ECHO "Setting retention period for raw data of processed recordings to $(retentioncalc $KEEPPROCESSEDRAW)."
+$SED -e "s/^\(published_days=\).*$/\1$(expr $KEEPPROCESSEDRAW - 1)/" -i $CRONDAILY
 $SED -e 's/^#\(remove_raw_of_published_recordings\)/\1/' -i $CRONDAILY
 
-$ECHO "Setting retention period for raw data of unprocessed recordings to $KEEPUNPROCESSEDRAW days."
-$SED -e "s/^\(unrecorded_days=\).*$/\1$KEEPUNPROCESSEDRAW/" -i $CRONDAILY
+$ECHO "Setting retention period for raw data of unprocessed recordings to $(retentioncalc $KEEPUNPROCESSEDRAW)."
+$SED -e "s/^\(unrecorded_days=\).*$/\1$(expr $KEEPUNPROCESSEDRAW - 1)/" -i $CRONDAILY
 
-$ECHO "Setting retention period for presentations, red5 caches, kurento caches, and freeswitch caches to $KEEPCACHES days."
-$SED -e "s/^\(history=\).*$/\1$KEEPCACHES/" -i $CRONDAILY
+$ECHO "Setting retention period for presentations, red5 caches, kurento caches, and freeswitch caches to $(retentioncalc $KEEPCACHES)"
+$SED -e "s/^\(history=\).*$/\1$(expr $KEEPCACHES - 1)/" -i $CRONDAILY
 
-$ECHO "Setting log history to $KEEPLOGS days."
-$SED -e "s/^\(log_history=\).*$/\1$KEEPLOGS/" -i $CRONDAILY
+$ECHO "Setting log history to $(retentioncalc $KEEPLOGS)."
+$SED -e "s/^\(log_history=\).*$/\1$(expr $KEEPLOGS - 1)/" -i $CRONDAILY
 
 if $RECORDINGS;then
 	$ECHO "Keeping recordings activated."
@@ -64,9 +91,10 @@ $SED -e 's/^\(breakoutRoomsRecord=\).*$/\1false/' -i $BBBWEBPROP
 $ECHO "Setting bbb log level to 'error'."
 $SED -e 's/^\(appLogLevel=\).*$/\1Error/' -i $BBBWEBPROP
 
-$ECHO "Setting FreeSWITCH log level to 'ERROR'."
+$ECHO "Setting FreeSWITCH log levels to 'ERROR'."
 $SED -e 's/\(^[[:space:]]*loglevel =\).*$/\1 "ERROR"/' -i $FREESWITCHAPPCONF
 $SED -e 's/\(^[[:space:]]*stdout-loglevel =\).*$/\1 "ERROR"/' -i $FREESWITCHAPPCONF
+$SED -e 's/\(^[[:space:]]*<logger name="[a-z\.]*" level="\)[A-Z]*\(" \/>\)/\1ERROR\2/' -i $FREESWITCHLOGCONF
 $SED -e 's/\(^[[:space:]]*<root level="\)[A-Z]*\(">\)/\1ERROR\2/' -i $FREESWITCHLOGCONF
 
 $ECHO "Leaving red5 loglevel at INFO."
@@ -126,9 +154,9 @@ then
 # Delete whiteboard material
 # 
 KEEPWBMATERIAL=$KEEPWBMATERIAL
-find /var/bigbluebutton/* -maxdepth 1 -type d -not \( -name basic_stats -o -name -o -name blank -o -name captions -o -name configs -o -name deleted -o -name diagnostics -o -name events -o -name screenshare -o -name playback -o -name published -o -name recording -o -name unpublished \) -mtime +\$KEEPWBMATERIAL -exec rm -rf {} +
+find /var/bigbluebutton/* -maxdepth 1 -type d -not \( -name basic_stats -o -name -o -name blank -o -name captions -o -name configs -o -name deleted -o -name diagnostics -o -name events -o -name screenshare -o -name playback -o -name published -o -name recording -o -name unpublished \) -mtime +\$(expr \$KEEPWBMATERIAL - 1) -exec rm -rf {} +
 HERE
 else
-	$ECHO "Setting retention of whiteboard material to $KEEPWBMATERIAL days."
-	sed -e "s/^\(KEEPWPMATERIAL\).*$/\1$KEEPWBMATERIAL/" -i $CRONDAILY
+	$ECHO "Setting retention period of whiteboard material to $(retentioncalc $KEEPWBMATERIAL)."
+	$SED -e "s/^\(KEEPWPMATERIAL\).*$/\1$KEEPWBMATERIAL/" -i $CRONDAILY
 fi

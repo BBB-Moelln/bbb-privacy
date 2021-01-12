@@ -27,12 +27,6 @@ SIPJS=/usr/share/meteor/bundle/programs/web.browser/app/compatibility/sip.js
 
 ## Some settings
 RECORDINGS=false
-SERVERIP=XXX
-STUNSERVER=XXX
-STUNPORT=XXX
-TURNSERVER=$STUNSERVER
-TURNPORT=$STUNPORT
-TURNSECRET=XXX
 KEEPPROCESSEDRAW=1
 KEEPUNPROCESSEDRAW=1
 KEEPCACHES=1
@@ -105,39 +99,8 @@ $SED -e 's/\(--gst-debug-level=\)[0-9]\{1\}/\11/' -i $KURENTOSERVICECONF
 $SED -e 's/\(--gst-debug=\)"[a-Z0-9,*:]\?"/\1"1,Kurento*:1,kms*:1,sdp*:1,webrtc*:1,*rtpendpoint:1,rtp*handler:1,rtpsynchronizer:1,agnosticbin:1"/' -i $KURENTOSERVICECONF
 systemctl daemon-reload
 
-$ECHO "Adding custom STUNTURN server."
-$CAT <<HERE > $TURNSTUNCONF
-<?xml version="1.0" encoding="UTF-8"?>
-<beans xmlns="http://www.springframework.org/schema/beans"
-        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-        xsi:schemaLocation="http://www.springframework.org/schema/beans
-        http://www.springframework.org/schema/beans/spring-beans-2.5.xsd">
-    <bean id="stun0" class="org.bigbluebutton.web.services.turn.StunServer">
-        <constructor-arg index="0" value="stun:$STUNSERVER"/>
-    </bean>
-    <bean id="turn0" class="org.bigbluebutton.web.services.turn.TurnServer">
-        <constructor-arg index="0" value="$TURNSECRET"/>
-        <constructor-arg index="1" value="turns:$TURNSERVER:$TURNPORT?transport=tcp"/>
-        <constructor-arg index="2" value="86400"/>
-    </bean>
-    <bean id="stunTurnService"
-            class="org.bigbluebutton.web.services.turn.StunTurnService">
-        <property name="stunServers">
-            <set>
-                <ref bean="stun0"/>
-            </set>
-        </property>
-        <property name="turnServers">
-            <set>
-                <ref bean="turn0"/>
-            </set>
-        </property>
-    </bean>
-</beans>
-HERE
-
 $ECHO "Replacing hardcoded Google STUN in sip.js."
-$SED -e "s/\(^[[:space:]]*stunServers:\).*google\.com.*$/\1 ['stun:$STUNSERVER:$STUNPORT'],/" -i $SIPJS
+$SED -e "s/\(^[[:space:]]*stunServers:\).*google\.com.*$/\1 ['stun:turn.moelln.de:3478'],/" -i $SIPJS
 
 $ECHO "Setting external IP address in Kurento to prevent the use of a hardcoded Google STUN."
 $SED -e "s/[;]\{0,1\}\(externalAddress=\).*$/\1$SERVERIP/" -i $KURENTOWEBRTCCONF
